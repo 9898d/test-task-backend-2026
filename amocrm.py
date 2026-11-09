@@ -75,6 +75,26 @@ class BaseEntity:
     def __repr__(self):
         return str(self)
 
+    @classmethod
+    def get_schema(cls, many=False):
+        """
+        Стаб: в реальном клиенте CRM здесь marshmallow-схема.
+        В репозитории клиента нет, поэтому возвращаем заглушку,
+        которая просто возвращает входной список как есть.
+        """
+        class _StubSchema:
+            def load(self, data, many=False):
+                return data or []
+        return _StubSchema()
+
+    def as_dict(self) -> dict:
+        """Возвращает словарь с полями объекта (для сохранения в JSONB api_value)."""
+        return {
+            key: value
+            for key, value in self.__dict__.items()
+            if not key.startswith("_")
+        }
+
     def get_field(self, field_name):
         return self.custom_fields_values.get(field_name, {}).get('value')
 
@@ -105,26 +125,10 @@ class Customer(BaseEntity):
     entity_name = CUSTOMERS
 
     def __init__(self,
-                 id,
-                 name,
-                 next_price,
-                 next_date,
-                 responsible_user_id,
-                 status_id,
-                 periodicity,
-                 created_by,
-                 updated_by,
-                 created_at,
-                 updated_at,
-                 closest_task_at,
-                 is_deleted,
-                 ltv,
-                 purchases_count,
-                 average_check,
-                 account_id,
-                 custom_fields_values,
-                 _embedded=None
-                 ):
+                 id, name, next_price, next_date, responsible_user_id, status_id,
+                 periodicity, created_by, updated_by, created_at, updated_at,
+                 closest_task_at, is_deleted, ltv, purchases_count, average_check,
+                 account_id, custom_fields_values, _embedded=None):
         self.id = id
         self.name = name
         self.next_price = next_price
@@ -165,25 +169,11 @@ class Lead(BaseEntity):
     PATCH_FIELDS = ("custom_fields_values", "id")
 
     def __init__(self,
-                 name=None,
-                 id=None,
-                 price=None,
-                 responsible_user_id=None,
-                 group_id=None,
-                 status_id=None,
-                 pipeline_id=None,
-                 source_id=None,
-                 created_by=None,
-                 updated_by=None,
-                 created_at=None,
-                 updated_at=None,
-                 closest_task_at=None,
-                 is_deleted=None,
-                 score=None,
-                 account_id=None,
-                 custom_fields_values=None,
-                 _embedded=None
-                 ):
+                 name=None, id=None, price=None, responsible_user_id=None,
+                 group_id=None, status_id=None, pipeline_id=None, source_id=None,
+                 created_by=None, updated_by=None, created_at=None, updated_at=None,
+                 closest_task_at=None, is_deleted=None, score=None, account_id=None,
+                 custom_fields_values=None, _embedded=None):
         self.id = id
         self.name = name
         self.price = price
@@ -245,7 +235,7 @@ def amocrm_get(obj_cls: Type[BaseEntity],
         response = None
         json_data = None
         try:
-            for try_attempt in range(4):  # 0..3 — до 4 попыток на один запрос
+            for try_attempt in range(4):
                 try:
                     response = requests.get(url, params=params, headers=headers, timeout=120)
                     json_data = response_handler(response)
@@ -253,7 +243,6 @@ def amocrm_get(obj_cls: Type[BaseEntity],
                 except AmoCrmRepeatError as e:
                     if try_attempt >= 3:
                         raise e
-                    # повторить тот же запрос (тот же url, params), без нового get() с начала
                 except AmoCrmNoConten:
                     raise
                 except Exception as e:
@@ -267,26 +256,20 @@ def amocrm_get(obj_cls: Type[BaseEntity],
                 counter += 1
                 skip_entity = False
                 if custom_filter:
-                    # if custom filter is not None then check custom field,
-                    # if at least one not equal filter, set skip_entity value True and break checker
-                    #
                     for key, value in custom_filter.items():
                         if entity.get_field(key) != value:
                             skip_entity = True
                             break
-                # check if should pass entity
                 if skip_entity:
                     pass
                 else:
                     yield entity
 
-            # condition to stop while loop
             if page:
                 break
             if counter < limit:
                 break
             time.sleep(1)
-            # reset url and params for page iteration
             url = json_data['_links']['next']['href']
             params = {}
 
